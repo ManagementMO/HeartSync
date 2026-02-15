@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__filesystem__list_directory",
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(uv venv:*)",
+      "Bash(uv pip install:*)",
+      "Bash(source:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(xxd:*)",
+      "mcp__filesystem__directory_tree"
+    ]
+  }
+}

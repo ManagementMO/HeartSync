@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HeartSync</title>
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+<style>
+  :root {
+    --bg-primary: #0a0e17;
+    --bg-card: rgba(20, 25, 41, 0.7);
+    --bg-card-border: #1e293b;
+    --accent-pink: #ec4899;
+    --accent-rose: #f43f5e;
+    --accent-red: #ef4444;
+    --accent-purple: #a78bfa;
+    --accent-blue: #3b82f6;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --heart-glow: rgba(236, 72, 153, 0.0);
+    --bg-gradient-start: #0a0e17;
+    --bg-gradient-end: #0f1629;
+    --gauge-color: #3b82f6;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+    transition: background 2s ease;
+  }
+
+  #particle-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 3rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  /* --- Header --- */
+  .header {
+    text-align: center;
+  }
+  .header h1 {
+    font-size: 2.8rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent-pink), var(--accent-rose), var(--accent-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header h1 .heart-icon { -webkit-text-fill-color: var(--accent-rose); }
+  .header .subtitle {
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    margin-top: 0.25rem;
+    font-style: italic;
+  }
+
+  /* --- Glass Card --- */
+  .glass-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--bg-card-border);
+    border-radius: 1.25rem;
+    padding: 2rem;
+    width: 100%;
+  }
+
+  /* --- Hearts Section --- */
+  .hearts-section {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 2.5rem 1rem;
+    position: relative;
+  }
+
+  .heart-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .heart-container.person-a { transform: translateX(var(--heart-offset-a, 0px)); }
+  .heart-container.person-b { transform: translateX(var(--heart-offset-b, 0px)); }
+
+  .heart-shape {
+    width: 100px;
+    height: 100px;
+    position: relative;
+    animation: pulse 1s ease-in-out infinite;
+    filter: drop-shadow(0 0 8px var(--heart-glow));
+    transition: filter 1s ease;
+  }
+  .heart-shape svg { width: 100%; height: 100%; }
+  .heart-shape svg path {
+    fill: var(--accent-pink);
+    transition: fill 1s ease;
+  }
+
+  .person-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+  .bpm-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    transition: opacity 0.3s;
+  }
+  .bpm-unit {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+  .data-stale { opacity: 0.4; }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    15% { transform: scale(1.15); }
+    30% { transform: scale(1.0); }
+    45% { transform: scale(1.1); }
+    60% { transform: scale(1.0); }
+  }
+
+  /* --- Sync Gauge --- */
+  .sync-section { text-align: center; }
+  .gauge-wrap {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    margin: 0 auto 1rem;
+  }
+  .gauge-wrap svg { transform: rotate(-90deg); }
+  .gauge-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.06);
+    stroke-width: 10;
+  }
+  .gauge-fill {
+    fill: none;
+    stroke: var(--gauge-color);
+    stroke-width: 10;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s ease, stroke 1s ease;
+    filter: drop-shadow(0 0 6px var(--gauge-color));
+  }
+  .gauge-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .gauge-percent {
+    font-size: 3rem;
+    font-weight: 800;
+    line-height: 1;
+    background: linear-gradient(135deg, var(--gauge-color), var(--accent-pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .gauge-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .sync-level-text {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent-pink);
+    transition: color 1s ease;
+  }
+
+  /* --- Channels --- */
+  .channels-section { width: 100%; }
+  .channels-section h3 {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 1rem;
+    text-align: center;
+  }
+  .channel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+  }
+  .channel-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .channel-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+  }
+  .channel-bar-bg {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .channel-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.8s ease, background 0.8s ease;
+  }
+
+  /* --- Commentary --- */
+  .commentary-section {
+    min-height: 3.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 1rem 2rem;
+  }
+  .commentary-text {
+    font-size: 1.15rem;
+    font-style: italic;
+    color: var(--accent-pink);
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    line-height: 1.6;
+  }
+  .commentary-text.visible { opacity: 1; }
+
+  /* --- Controls --- */
+  .controls-section {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 0.65rem 1.8rem;
+    border-radius: 0.75rem;
+    border: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    outline: none;
+  }
+  .btn:focus-visible {
+    box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.5);
+  }
+  .btn-start {
+    background: linear-gradient(135deg, var(--accent-pink), var(--accent-rose));
+    color: #fff;
+  }
+  .btn-start:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-stop {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--accent-red);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  .btn-stop:hover { background: rgba(239, 68, 68, 0.25); }
+
+  .session-timer {
+    font-size: 1.4rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    min-width: 5ch;
+    text-align: center;
+  }
+
+  .connection-status {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+    transition: background 0.3s;
+  }
+  .status-dot.connected { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.5); }
+
+  /* --- Footer --- */
+  .footer {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    padding-top: 1rem;
+  }
+
+  /* --- Responsive --- */
+  @media (max-width: 600px) {
+    .header h1 { font-size: 2rem; }
+    .heart-shape { width: 72px; height: 72px; }
+    .bpm-value { font-size: 1.5rem; }
+    .gauge-wrap { width: 160px; height: 160px; }
+    .gauge-percent { font-size: 2.4rem; }
+    .channel-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="particle-canvas"></canvas>
+
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <h1><span class="heart-icon">&hearts;</span> HeartSync</h1>
+    <p class="subtitle">Where hearts align</p>
+  </div>
+
+  <!-- Hearts -->
+  <div class="glass-card">
+    <div class="hearts-section">
+      <div class="heart-container person-a" id="heart-a">
+        <div class="heart-shape" id="heart-shape-a">
+          <svg viewBox="0 0 100 100"><path d="M50 88 C25 65, 0 50, 0 30 C0 12, 15 0, 30 0 C40 0, 48 6, 50 15 C52 6, 60 0, 70 0 C85 0, 100 12, 100 30 C100 50, 75 65, 50 88Z"/></svg>
+        </div>
+        <span class="person-label">Person A</span>
+        <div><span class="bpm-value" id="bpm-a">--</span> <span class="bpm-unit">BPM</span></div>
+      </div>
+
+      <div class="heart-container person-b" id="heart-b">
+        <div class="heart-shape" id="heart-shape-b">
+          <svg viewBox="0 0 100 100"><path d="M50 88 C25 65, 0 50, 0 30 C0 12, 15 0, 30 0 C40 0, 48 6, 50 15 C52 6, 60 0, 70 0 C85 0, 100 12, 100 30 C100 50, 75 65, 50 88Z"/></svg>
+        </div>
+        <span class="person-label">Person B</span>
+        <div><span class="bpm-value" id="bpm-b">--</span> <span class="bpm-unit">BPM</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sync Gauge -->
+  <div class="glass-card sync-section">
+    <div class="gauge-wrap">
+      <svg width="200" height="200" viewBox="0 0 200 200">
+        <circle class="gauge-bg" cx="100" cy="100" r="85"/>
+        <circle class="gauge-fill" id="gauge-arc" cx="100" cy="100" r="85"
+                stroke-dasharray="534" stroke-dashoffset="534"/>
+      </svg>
+      <div class="gauge-text">
+        <div class="gauge-percent" id="sync-percent">0%</div>
+        <div class="gauge-label">Sync Score</div>
+      </div>
+    </div>
+    <div class="sync-level-text" id="sync-level">Waiting...</div>
+  </div>
+
+  <!-- Channel Breakdown -->
+  <div class="glass-card channels-section">
+    <h3>Connection Channels</h3>
+    <div class="channel-grid">
+      <div class="channel-item">
+        <div class="channel-label"><span>Heart Rate</span><span id="ch-hr-val">0%</span></div>
+        <div class="channel-bar-bg"><div class="channel-bar-fill" id="ch-hr" style="width:0%;background:var(--accent-rose)"></div></div>
+      </div>
+      <div class="channel-item">
+        <div class="channel-label"><span>Eye Contact</span><span id="ch-eye-val">0%</span></div>
+        <div class="channel-bar-bg"><div class="channel-bar-fill" id="ch-eye" style="width:0%;background:var(--accent-purple)"></div></div>
+      </div>
+      <div class="channel-item">
+        <div class="channel-label"><span>Breathing</span><span id="ch-br-val">0%</span></div>
+        <div class="channel-bar-bg"><div class="channel-bar-fill" id="ch-br" style="width:0%;background:var(--accent-blue)"></div></div>
+      </div>
+      <div class="channel-item">
+        <div class="channel-label"><span>Smiling</span><span id="ch-smile-val">0%</span></div>
+        <div class="channel-bar-bg"><div class="channel-bar-fill" id="ch-smile" style="width:0%;background:#facc15"></div></div>
+      </div>
+      <div class="channel-item">
+        <div class="channel-label"><span>Touch</span><span id="ch-hand-val">0%</span></div>
+        <div class="channel-bar-bg"><div class="channel-bar-fill" id="ch-hand" style="width:0%;background:#f97316"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Commentary -->
+  <div class="glass-card commentary-section">
+    <p class="commentary-text" id="commentary">&ldquo;Start a session to begin sensing your connection...&rdquo;</p>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls-section">
+    <div class="connection-status">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Disconnected</span>
+    </div>
+    <button class="btn btn-start" id="btn-start" onclick="startSession()">Start Session</button>
+    <div class="session-timer" id="session-timer">00:00</div>
+    <button class="btn btn-stop" id="btn-stop" onclick="stopSession()" style="display:none;">Stop Session</button>
+  </div>
+
+  <div class="footer">HeartSync &mdash; MakeUofT 2026</div>
+
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  /* ── State ── */
+  let syncScore = 0;
+  let sessionActive = false;
+  let sessionStartLocal = null;
+  let timerInterval = null;
+  let lastBpmA = 0;
+  let lastBpmB = 0;
+  let commentaryTimeout = null;
+
+  /* ── DOM refs ── */
+  const $ = (id) => document.getElementById(id);
+  const bpmA = $('bpm-a');
+  const bpmB = $('bpm-b');
+  const heartShapeA = $('heart-shape-a');
+  const heartShapeB = $('heart-shape-b');
+  const heartContA = $('heart-a');
+  const heartContB = $('heart-b');
+  const gaugeArc = $('gauge-arc');
+  const syncPercent = $('sync-percent');
+  const syncLevel = $('sync-level');
+  const commentary = $('commentary');
+  const statusDot = $('status-dot');
+  const statusText = $('status-text');
+  const btnStart = $('btn-start');
+  const btnStop = $('btn-stop');
+  const sessionTimer = $('session-timer');
+
+  const chHr = $('ch-hr');      const chHrVal = $('ch-hr-val');
+  const chEye = $('ch-eye');    const chEyeVal = $('ch-eye-val');
+  const chBr = $('ch-br');      const chBrVal = $('ch-br-val');
+  const chSmile = $('ch-smile'); const chSmileVal = $('ch-smile-val');
+  const chHand = $('ch-hand');  const chHandVal = $('ch-hand-val');
+
+  const CIRCUMFERENCE = 2 * Math.PI * 85; // ~534
+
+  /* ── Socket.IO ── */
+  const socket = io();
+
+  socket.on('connect', () => {
+    statusDot.classList.add('connected');
+    statusText.textContent = 'Connected';
+  });
+
+  socket.on('disconnect', () => {
+    statusDot.classList.remove('connected');
+    statusText.textContent = 'Disconnected';
+  });
+
+  socket.on('state_update', (data) => { updateUI(data); });
+
+  socket.on('commentary', (data) => {
+    const text = (typeof data === 'string') ? data : data.text;
+    if (text) showCommentary(text);
+  });
+
+  /* ── Update UI ── */
+  function updateUI(data) {
+    if (!data) return;
+
+    /* Person A */
+    const a = data.person_a || {};
+    const hrA = a.heart_rate ? Math.round(a.heart_rate) : null;
+    bpmA.textContent = hrA !== null ? hrA : '--';
+    bpmA.classList.toggle('data-stale', !a.data_fresh);
+    if (hrA && hrA !== lastBpmA) {
+      heartShapeA.style.animationDuration = (60 / hrA).toFixed(2) + 's';
+      lastBpmA = hrA;
+    }
+
+    /* Person B */
+    const b = data.person_b || {};
+    const hrB = b.heart_rate ? Math.round(b.heart_rate) : null;
+    bpmB.textContent = hrB !== null ? hrB : '--';
+    bpmB.classList.toggle('data-stale', !b.data_fresh);
+    if (hrB && hrB !== lastBpmB) {
+      heartShapeB.style.animationDuration = (60 / hrB).toFixed(2) + 's';
+      lastBpmB = hrB;
+    }
+
+    /* Sync */
+    const sync = data.sync || {};
+    syncScore = typeof sync.score === 'number' ? sync.score : 0;
+    const pct = Math.round(syncScore * 100);
+
+    /* Gauge arc */
+    const offset = CIRCUMFERENCE * (1 - syncScore);
+    gaugeArc.setAttribute('stroke-dashoffset', offset.toFixed(1));
+    syncPercent.textContent = pct + '%';
+
+    /* Gauge color (blue -> purple -> pink) */
+    const gaugeColor = lerpColor(syncScore);
+    document.documentElement.style.setProperty('--gauge-color', gaugeColor);
+    gaugeArc.setAttribute('stroke', gaugeColor);
+
+    /* Sync level text */
+    const level = sync.level || levelFromScore(syncScore);
+    const levelLabels = {
+      deeply_connected: 'Deeply Connected',
+      connecting: 'Connecting',
+      warming_up: 'Warming Up',
+      disconnected: 'Disconnected'
+    };
+    syncLevel.textContent = levelLabels[level] || level;
+    syncLevel.style.color = gaugeColor;
+
+    /* Hearts drift: from 60px apart (score=0) to 0px (score=1) */
+    const drift = 60 * (1 - syncScore);
+    document.documentElement.style.setProperty('--heart-offset-a', -drift + 'px');
+    document.documentElement.style.setProperty('--heart-offset-b', drift + 'px');
+
+    /* Heart glow */
+    const glowAlpha = (syncScore * 0.7).toFixed(2);
+    const glowSize = Math.round(8 + syncScore * 24);
+    heartShapeA.style.filter = 'drop-shadow(0 0 ' + glowSize + 'px rgba(236,72,153,' + glowAlpha + '))';
+    heartShapeB.style.filter = 'drop-shadow(0 0 ' + glowSize + 'px rgba(236,72,153,' + glowAlpha + '))';
+
+    /* Heart color: from soft pink to vivid rose at high sync */
+    const heartColor = syncScore > 0.65 ? '#f43f5e' : '#ec4899';
+    heartShapeA.querySelector('path').style.fill = heartColor;
+    heartShapeB.querySelector('path').style.fill = heartColor;
+
+    /* Background gradient shift */
+    if (syncScore > 0.6) {
+      document.documentElement.style.setProperty('--bg-gradient-start', '#1a0a14');
+      document.documentElement.style.setProperty('--bg-gradient-end', '#2d1028');
+    } else if (syncScore > 0.3) {
+      document.documentElement.style.setProperty('--bg-gradient-start', '#0f0a1a');
+      document.documentElement.style.setProperty('--bg-gradient-end', '#1a1030');
+    } else {
+      document.documentElement.style.setProperty('--bg-gradient-start', '#0a0e17');
+      document.documentElement.style.setProperty('--bg-gradient-end', '#0f1629');
+    }
+    document.body.style.background = 'linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end))';
+
+    /* Channels */
+    setChannel(chHr, chHrVal, sync.hr_sync);
+    setChannel(chEye, chEyeVal, sync.eye_contact === true ? 1 : (typeof sync.eye_contact === 'number' ? sync.eye_contact : 0));
+    setChannel(chBr, chBrVal, sync.br_sync);
+    setChannel(chSmile, chSmileVal, sync.both_smiling === true ? 1 : (typeof sync.both_smiling === 'number' ? sync.both_smiling : 0));
+    setChannel(chHand, chHandVal, sync.hand_score);
+
+    /* Session state */
+    sessionActive = !!data.session_active;
+    btnStart.style.display = sessionActive ? 'none' : '';
+    btnStop.style.display = sessionActive ? '' : 'none';
+
+    if (data.session_duration != null && sessionActive) {
+      sessionTimer.textContent = formatTime(data.session_duration);
+    }
+  }
+
+  function setChannel(bar, label, value) {
+    const v = typeof value === 'number' ? Math.min(1, Math.max(0, value)) : 0;
+    bar.style.width = (v * 100).toFixed(0) + '%';
+    label.textContent = Math.round(v * 100) + '%';
+  }
+
+  function levelFromScore(s) {
+    if (s >= 0.75) return 'deeply_connected';
+    if (s >= 0.50) return 'connecting';
+    if (s >= 0.25) return 'warming_up';
+    return 'disconnected';
+  }
+
+  /* Color interpolation: blue(0) -> purple(0.5) -> rose(1) */
+  function lerpColor(t) {
+    const colors = [
+      [59, 130, 246],   /* blue   at 0   */
+      [167, 139, 250],  /* purple at 0.5 */
+      [244, 63, 94]     /* rose   at 1   */
+    ];
+    let idx, frac;
+    if (t <= 0.5) { idx = 0; frac = t / 0.5; }
+    else          { idx = 1; frac = (t - 0.5) / 0.5; }
+    const a = colors[idx], b = colors[idx + 1];
+    const r = Math.round(a[0] + (b[0] - a[0]) * frac);
+    const g = Math.round(a[1] + (b[1] - a[1]) * frac);
+    const bl = Math.round(a[2] + (b[2] - a[2]) * frac);
+    return 'rgb(' + r + ',' + g + ',' + bl + ')';
+  }
+
+  /* ── Commentary ── */
+  function showCommentary(text) {
+    if (commentaryTimeout) clearTimeout(commentaryTimeout);
+    commentary.classList.remove('visible');
+    /* Brief delay for transition reset */
+    setTimeout(() => {
+      commentary.innerHTML = '&ldquo;' + escapeHTML(text) + '&rdquo;';
+      commentary.classList.add('visible');
+    }, 50);
+    commentaryTimeout = setTimeout(() => {
+      commentary.classList.remove('visible');
+    }, 8000);
+  }
+
+  function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  /* ── Session Controls ── */
+  window.startSession = function() {
+    fetch('/api/session/start', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        sessionActive = true;
+        btnStart.style.display = 'none';
+        btnStop.style.display = '';
+        sessionStartLocal = Date.now();
+        startLocalTimer();
+      })
+      .catch(err => console.error('Start session failed:', err));
+  };
+
+  window.stopSession = function() {
+    fetch('/api/session/stop', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        sessionActive = false;
+        btnStart.style.display = '';
+        btnStop.style.display = 'none';
+        stopLocalTimer();
+      })
+      .catch(err => console.error('Stop session failed:', err));
+  };
+
+  function startLocalTimer() {
+    stopLocalTimer();
+    timerInterval = setInterval(() => {
+      if (!sessionActive || !sessionStartLocal) return;
+      const elapsed = (Date.now() - sessionStartLocal) / 1000;
+      sessionTimer.textContent = formatTime(elapsed);
+    }, 1000);
+  }
+
+  function stopLocalTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  }
+
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  /* ── Particle System ── */
+  const canvas = document.getElementById('particle-canvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  const PARTICLE_COLORS = [
+    'rgba(236,72,153,',   /* pink */
+    'rgba(244,63,94,',    /* rose */
+    'rgba(239,68,68,',    /* red */
+    'rgba(167,139,250,',  /* purple */
+    'rgba(251,113,133,',  /* light pink */
+  ];
+
+  function spawnParticle() {
+    const color = PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)];
+    particles.push({
+      x: Math.random() * canvas.width,
+      y: canvas.height + 10,
+      size: 3 + Math.random() * 5,
+      speedY: -(0.5 + Math.random() * 1.5),
+      speedX: (Math.random() - 0.5) * 0.8,
+      opacity: 0.4 + Math.random() * 0.5,
+      decay: 0.003 + Math.random() * 0.004,
+      color: color,
+      isHeart: Math.random() > 0.5
+    });
+  }
+
+  function drawHeart(cx, cy, size, color, opacity) {
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = color + opacity + ')';
+    ctx.translate(cx, cy);
+    const s = size / 10;
+    ctx.beginPath();
+    ctx.moveTo(0, s * 3);
+    ctx.bezierCurveTo(-s * 5, -s * 2, -s * 5, -s * 5, 0, -s * 3);
+    ctx.bezierCurveTo(s * 5, -s * 5, s * 5, -s * 2, 0, s * 3);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawCircle(cx, cy, size, color, opacity) {
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = color + opacity + ')';
+    ctx.beginPath();
+    ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function updateParticles() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    /* Spawn particles when sync is high */
+    if (syncScore > 0.75) {
+      const rate = Math.floor((syncScore - 0.75) * 12); /* 0-3 per frame */
+      for (let i = 0; i < rate; i++) spawnParticle();
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.speedX;
+      p.y += p.speedY;
+      p.opacity -= p.decay;
+
+      if (p.opacity <= 0 || p.y < -20) {
+        particles.splice(i, 1);
+        continue;
+      }
+
+      if (p.isHeart) {
+        drawHeart(p.x, p.y, p.size, p.color, p.opacity);
+      } else {
+        drawCircle(p.x, p.y, p.size, p.color, p.opacity);
+      }
+    }
+
+    requestAnimationFrame(updateParticles);
+  }
+
+  requestAnimationFrame(updateParticles);
+
+  /* ── Initial commentary visible ── */
+  setTimeout(() => { commentary.classList.add('visible'); }, 300);
+
+})();
+</script>
+</body>
+</html>

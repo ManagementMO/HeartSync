@@ -1,0 +1,32 @@
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Audio stems (large files)
+audio/*.wav
+audio/*.ogg
+audio/*.mp3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large media (uncomment if you DON'T want to commit demo photos)
+# docs/photos/*.jpg
+# docs/photos/*.png
